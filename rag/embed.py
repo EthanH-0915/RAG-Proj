@@ -19,7 +19,8 @@ def get_model(name: str = config.EMBEDDING_MODEL):
     from sentence_transformers import SentenceTransformer
 
     model = SentenceTransformer(name)
-    dim = model.get_sentence_embedding_dimension()
+    getter = getattr(model, "get_embedding_dimension", None) or model.get_sentence_embedding_dimension
+    dim = getter()
     if dim != config.EMBEDDING_DIM:
         raise ValueError(
             f"{name} produces {dim}-dimensional vectors but the schema column is "
