@@ -1,0 +1,43 @@
+# Seed question set for the evaluation harness (week 5 grows this to 40).
+#
+# expected_source_ids are the chunks retrieval SHOULD return; recall@5 and MRR
+# are computed against them. They are written by hand and must be checked
+# against the ingested data before any result is reported -- ATT&CK renames and
+# re-numbers things between versions (v19 replaced the Defense Evasion tactic
+# with Stealth and Defense Impairment, for instance).
+#
+# `needs` records which doc_types must be ingested for a question to be
+# answerable at all; only `technique` exists in week 3.
+
+- id: idlookup-01
+  category: id_lookup
+  question: What is T1059.001?
+  expected_source_ids: [T1059.001]
+  needs: [technique]
+
+- id: conceptual-01
+  category: conceptual
+  question: How do attackers dump credentials from memory?
+  expected_source_ids: [T1003.001, T1003]
+  needs: [technique]
+
+- id: relational-01
+  category: relational
+  question: Which mitigations address spearphishing attachments?
+  # T1566.001 is Spearphishing Attachment; these are its `mitigated_by` IDs.
+  # Verify with: python -m rag.query "T1566.001" --show-content
+  expected_source_ids: [M1017, M1049, M1031, M1021]
+  needs: [technique, mitigation]
+
+- id: vulnerability-01
+  category: vulnerability
+  question: Which exploited vulnerabilities affect Microsoft Exchange?
+  expected_source_ids: [CVE-2021-26855, CVE-2021-34473]
+  needs: [cve]
+
+- id: unanswerable-01
+  category: unanswerable
+  question: What is T9999?
+  expected_source_ids: []
+  should_decline: true
+  needs: [technique]

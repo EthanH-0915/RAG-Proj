@@ -1,0 +1,8 @@
+# Cached feeds are large and re-downloadable; the manifest is committed instead.
+data/raw/*.json
+data/raw/*.part
+.env
+__pycache__/
+*.py[cod]
+.venv/
+venv/

@@ -1,0 +1,9 @@
+# Pinned loosely on purpose: a one-machine student project, not a library.
+sentence-transformers>=3.0.0   # all-MiniLM-L6-v2 embeddings, runs locally
+psycopg[binary]>=3.2           # PostgreSQL driver
+pgvector>=0.3.6                # adapts numpy arrays to the vector type
+PyYAML>=6.0                    # eval question set
+
+# Not used: mitreattack-python. ATT&CK v19 moved detection guidance into
+# x-mitre-detection-strategy / x-mitre-analytic objects, which rag/attack.py
+# reads directly from the STIX bundle (see the module docstring).
