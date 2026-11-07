@@ -28,6 +28,10 @@ class Chunk:
     doc_type: str
     content: str
     metadata: dict = field(default_factory=dict)
+    # What the embedding model sees, when it should differ from `content`. The
+    # model truncates at max_seq_length tokens, so long relationship lists would
+    # be cut off anyway; they are matched by ID and keyword instead.
+    embed_text: str | None = None
 
 
 def _id_with_name(data: AttackData, objects: list[dict]) -> list[str]:
@@ -74,6 +78,7 @@ def build_technique_chunk(data: AttackData, technique: dict) -> Chunk | None:
     description = clean_text(technique.get("description"))
     if description:
         lines += ["", "Description:", description]
+    embed_text = "\n".join(lines)
 
     if strategies:
         lines += ["", "Detection:"]
@@ -115,7 +120,7 @@ def build_technique_chunk(data: AttackData, technique: dict) -> Chunk | None:
         "attack_version": technique.get("x_mitre_version"),
         "url": data.attack_url(technique),
     }
-    return Chunk(attack_id, DOC_TYPE_TECHNIQUE, "\n".join(lines), metadata)
+    return Chunk(attack_id, DOC_TYPE_TECHNIQUE, "\n".join(lines), metadata, embed_text)
 
 
 UPSERT = """
@@ -129,7 +134,7 @@ ON CONFLICT (source_id, doc_type, embedding_model) DO UPDATE
 
 
 def load(chunks: list[Chunk], truncate: bool) -> None:
-    vectors = embed.encode([c.content for c in chunks], progress=True)
+    vectors = embed.encode([c.embed_text or c.content for c in chunks], progress=True)
     manifest = (
         json.loads(config.MANIFEST_PATH.read_text(encoding="utf-8"))
         if config.MANIFEST_PATH.exists()
@@ -189,6 +194,16 @@ def main() -> None:
         f"  content chars: min {sizes[0]}, median {sizes[len(sizes) // 2]}, "
         f"max {sizes[-1]}"
     )
+
+    limit = embed.max_tokens()
+    counts = embed.token_counts([c.embed_text or c.content for c in chunks])
+    over = [c.source_id for c, n in zip(chunks, counts) if n > limit]
+    print(f"  embed tokens: median {sorted(counts)[len(counts) // 2]}, max {max(counts)}")
+    if over:
+        print(
+            f"  warning: {len(over)}/{len(chunks)} embed texts exceed the model's "
+            f"{limit}-token limit and lose their tail, e.g. {', '.join(over[:5])}"
+        )
 
     print(f"Embedding with {config.EMBEDDING_MODEL} ...")
     load(chunks, args.truncate)

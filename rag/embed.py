@@ -40,3 +40,13 @@ def encode(texts: Sequence[str], batch_size: int = 32, progress: bool = False) -
 
 def encode_one(text: str) -> np.ndarray:
     return encode([text])[0]
+
+
+def max_tokens() -> int:
+    """Tokens the model reads; anything past this is silently dropped."""
+    return get_model().max_seq_length
+
+
+def token_counts(texts: Sequence[str]) -> list[int]:
+    ids = get_model().tokenizer(list(texts), add_special_tokens=True, verbose=False)
+    return [len(i) for i in ids["input_ids"]]
