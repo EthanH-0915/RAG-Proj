@@ -1,13 +1,28 @@
-# Seed question set for the evaluation harness (week 5 grows this to 40).
+# Evaluation question set.
 #
 # expected_source_ids are the chunks retrieval SHOULD return; recall@5 and MRR
 # are computed against them. They are written by hand and must be checked
 # against the ingested data before any result is reported -- ATT&CK renames and
 # re-numbers things between versions (v19 replaced the Defense Evasion tactic
-# with Stealth and Defense Impairment, for instance).
+# with Stealth and Defense Impairment, for instance). Every ID below was checked
+# against ATT&CK v19.2 and KEV catalog 2026.10.08: live, and with the
+# relationship lists (mitigated_by) read from the bundle, not from memory.
 #
-# `needs` records which doc_types must be ingested for a question to be
-# answerable at all; only `technique` exists in week 3.
+# Questions were written before looking at any retrieval output, so they are not
+# tuned to what the system already gets right. Keep it that way when adding more.
+#
+# Conventions:
+#   - A question about a sub-technique expects that sub-technique only; the
+#     parent is added only when the question is general enough to mean both.
+#   - `needs` records which doc_types must be ingested for a question to be
+#     answerable at all; questions whose needs are missing are skipped.
+#   - `platform` / `doc_type`, when present, are passed to retrieval as filters.
+#   - recall@5 is capped at 5/n when a question expects n > 5 IDs.
+#
+# Categories: id_lookup, conceptual, relational, vulnerability, entity,
+# revoked_id, unanswerable.
+
+# ---------- id_lookup: the question names the ID ----------
 
 - id: idlookup-01
   category: id_lookup
@@ -15,25 +30,312 @@
   expected_source_ids: [T1059.001]
   needs: [technique]
 
+- id: idlookup-02
+  category: id_lookup
+  question: What is T1566.001?
+  expected_source_ids: [T1566.001]
+  needs: [technique]
+
+- id: idlookup-03
+  category: id_lookup
+  question: what is t1021.001
+  expected_source_ids: [T1021.001]
+  needs: [technique]
+
+- id: idlookup-04
+  category: id_lookup
+  question: What is T1059?
+  # Parent technique: its 13 sub-techniques all mention T1059 and compete with it.
+  expected_source_ids: [T1059]
+  needs: [technique]
+
+- id: idlookup-05
+  category: id_lookup
+  question: Which tactics does T1078 fall under, and on which platforms?
+  expected_source_ids: [T1078]
+  needs: [technique]
+
+- id: idlookup-06
+  category: id_lookup
+  # The ID is buried in a long question whose other words pull toward other
+  # techniques: the case where pinning exact ID matches should matter.
+  question: What detections and mitigations exist for T1110.003 against cloud identity providers and SaaS applications?
+  expected_source_ids: [T1110.003]
+  needs: [technique]
+
+- id: idlookup-07
+  category: id_lookup
+  question: What is the difference between T1003.001 and T1003.003?
+  expected_source_ids: [T1003.001, T1003.003]
+  needs: [technique]
+
+- id: idlookup-08
+  category: id_lookup
+  question: What is CVE-2021-44228?
+  expected_source_ids: [CVE-2021-44228]
+  needs: [cve]
+
+- id: idlookup-09
+  category: id_lookup
+  question: Has CVE-2020-1472 been exploited in the wild, and which product does it affect?
+  expected_source_ids: [CVE-2020-1472]
+  needs: [cve]
+
+- id: idlookup-10
+  category: id_lookup
+  question: What does mitigation M1032 recommend?
+  expected_source_ids: [M1032]
+  needs: [mitigation]
+
+- id: idlookup-11
+  category: id_lookup
+  question: Who is G0007?
+  expected_source_ids: [G0007]
+  needs: [group]
+
+# ---------- conceptual: described in words, no ID ----------
+
 - id: conceptual-01
   category: conceptual
   question: How do attackers dump credentials from memory?
   expected_source_ids: [T1003.001, T1003]
   needs: [technique]
 
+- id: conceptual-02
+  category: conceptual
+  question: How do attackers move laterally using Remote Desktop?
+  expected_source_ids: [T1021.001]
+  needs: [technique]
+
+- id: conceptual-03
+  category: conceptual
+  question: How can malware persist by adding itself to registry run keys or the startup folder?
+  expected_source_ids: [T1547.001]
+  needs: [technique]
+
+- id: conceptual-04
+  category: conceptual
+  question: What is password spraying?
+  expected_source_ids: [T1110.003]
+  needs: [technique]
+
+- id: conceptual-05
+  category: conceptual
+  question: How do adversaries run their code inside another running process to hide it?
+  expected_source_ids: [T1055]
+  needs: [technique]
+
+- id: conceptual-06
+  category: conceptual
+  question: How does ransomware encrypt files to disrupt a victim?
+  expected_source_ids: [T1486]
+  needs: [technique]
+
+- id: conceptual-07
+  category: conceptual
+  question: How are Windows scheduled tasks abused to execute malware?
+  expected_source_ids: [T1053.005]
+  needs: [technique]
+
+- id: conceptual-08
+  category: conceptual
+  question: How do adversaries exfiltrate stolen data to services like Dropbox or Google Drive?
+  expected_source_ids: [T1567.002]
+  needs: [technique]
+
+- id: conceptual-09
+  category: conceptual
+  question: How do attackers steal passwords saved in web browsers?
+  expected_source_ids: [T1555.003]
+  needs: [technique]
+
+- id: conceptual-10
+  category: conceptual
+  question: How is DNS used as a command and control channel?
+  expected_source_ids: [T1071.004]
+  needs: [technique]
+
+- id: conceptual-11
+  category: conceptual
+  question: How do attackers clear Windows event logs to cover their tracks?
+  # Renumbered in v19: was T1070.001 under Defense Evasion.
+  expected_source_ids: [T1685.005]
+  needs: [technique]
+
+- id: conceptual-12
+  category: conceptual
+  question: How do attackers bypass User Account Control to gain elevated privileges?
+  expected_source_ids: [T1548.002]
+  needs: [technique]
+
+- id: conceptual-13
+  category: conceptual
+  question: How do attackers request Kerberos service tickets to crack service account passwords offline?
+  expected_source_ids: [T1558.003]
+  needs: [technique]
+
+- id: conceptual-14
+  category: conceptual
+  question: How do attackers authenticate with a stolen NTLM password hash instead of the plaintext password?
+  expected_source_ids: [T1550.002]
+  needs: [technique]
+
+- id: conceptual-15
+  category: conceptual
+  question: How do adversaries disable antivirus and other security tools?
+  # Renumbered in v19: was T1562.001 under Defense Evasion.
+  expected_source_ids: [T1685]
+  needs: [technique]
+
+- id: conceptual-16
+  category: conceptual
+  question: How do attackers get a legitimate program to load a malicious DLL?
+  # v17 merged DLL Side-Loading (T1574.002) into T1574.001, now just "DLL".
+  expected_source_ids: [T1574.001]
+  needs: [technique]
+
+- id: conceptual-17
+  category: conceptual
+  question: How do phishing emails with malicious links give attackers initial access?
+  expected_source_ids: [T1566.002]
+  needs: [technique]
+
+- id: conceptual-18
+  category: conceptual
+  question: How do adversaries use legitimate stolen credentials to get in and stay in?
+  expected_source_ids: [T1078]
+  needs: [technique]
+
+- id: conceptual-19
+  category: conceptual
+  question: How do adversaries find other hosts on a network they have compromised?
+  expected_source_ids: [T1018]
+  needs: [technique]
+
+- id: conceptual-20
+  category: conceptual
+  question: How do attackers extract the Active Directory database from a domain controller?
+  expected_source_ids: [T1003.003]
+  needs: [technique]
+
+- id: conceptual-21
+  category: conceptual
+  # Narrowed after the first run: "across reboots on a Mac" also fits Launch
+  # Daemon, Login Items and Startup Items. Per-user launchd jobs are Launch Agents.
+  question: How do attackers get launchd to start their program every time a user logs in to a Mac?
+  expected_source_ids: [T1543.001]
+  platform: macOS
+  needs: [technique]
+
+- id: conceptual-22
+  category: conceptual
+  question: How are cron jobs used for persistence?
+  expected_source_ids: [T1053.003]
+  platform: Linux
+  needs: [technique]
+
+# ---------- relational: answered by following a relationship ----------
+
 - id: relational-01
   category: relational
   question: Which mitigations address spearphishing attachments?
-  # T1566.001 is Spearphishing Attachment; these are its `mitigated_by` IDs.
-  # Verify with: python -m rag.query "T1566.001" --show-content
-  expected_source_ids: [M1017, M1049, M1031, M1021]
+  # T1566.001's full mitigated_by list in v19.2 (7 IDs, so recall@5 <= 0.71).
+  expected_source_ids: [M1017, M1018, M1021, M1031, M1047, M1049, M1054]
   needs: [technique, mitigation]
+
+- id: relational-02
+  category: relational
+  question: Which mitigations help against password spraying?
+  expected_source_ids: [M1027, M1032, M1036]
+  needs: [technique, mitigation]
+
+- id: relational-03
+  category: relational
+  question: What mitigations reduce the risk of Kerberoasting?
+  expected_source_ids: [M1026, M1027, M1041]
+  needs: [technique, mitigation]
+
+- id: relational-04
+  category: relational
+  question: How can organisations mitigate ransomware encrypting their data?
+  # T1486's mitigated_by: Behavior Prevention on Endpoint, Data Backup.
+  expected_source_ids: [M1040, M1053]
+  needs: [technique, mitigation]
+
+- id: relational-05
+  category: relational
+  question: LSASS Memory is a sub-technique of which technique?
+  # The answer lives in T1003.001's own header ("Sub-technique of: T1003"), so
+  # that is the chunk to retrieve; T1003 was expected in the first draft.
+  expected_source_ids: [T1003.001]
+  needs: [technique]
+
+# ---------- vulnerability: KEV entries described in words ----------
 
 - id: vulnerability-01
   category: vulnerability
-  question: Which exploited vulnerabilities affect Microsoft Exchange?
-  expected_source_ids: [CVE-2021-26855, CVE-2021-34473]
+  question: Which Microsoft Exchange Server vulnerabilities make up ProxyNotShell?
+  # KEV's CVE-2022-41040 description names ProxyNotShell and its chain partner.
+  expected_source_ids: [CVE-2022-41040, CVE-2022-41082]
   needs: [cve]
+
+- id: vulnerability-02
+  category: vulnerability
+  question: Which Apache Log4j vulnerabilities are known to be exploited?
+  expected_source_ids: [CVE-2021-44228, CVE-2021-45046]
+  needs: [cve]
+
+- id: vulnerability-03
+  category: vulnerability
+  question: Which Windows Print Spooler remote code execution vulnerabilities are known to be exploited?
+  expected_source_ids: [CVE-2021-34527, CVE-2021-1675]
+  needs: [cve]
+
+- id: vulnerability-04
+  category: vulnerability
+  question: What is PrintNightmare?
+  # Named in the KEV shortDescription. Log4Shell and Citrix Bleed are not, so
+  # nickname-only questions about those would be unanswerable from the corpus.
+  expected_source_ids: [CVE-2021-34527]
+  needs: [cve]
+
+- id: vulnerability-05
+  category: vulnerability
+  question: Which Ivanti Connect Secure authentication bypass and command injection vulnerabilities have been exploited?
+  expected_source_ids: [CVE-2023-46805, CVE-2024-21887]
+  needs: [cve]
+
+- id: vulnerability-06
+  category: vulnerability
+  question: Which MOVEit Transfer SQL injection vulnerability is in the KEV catalog?
+  expected_source_ids: [CVE-2023-34362]
+  needs: [cve]
+
+# ---------- entity: groups named by an alias ----------
+
+- id: entity-01
+  category: entity
+  question: Which threat group is known as Cozy Bear?
+  expected_source_ids: [G0016]
+  needs: [group]
+
+- id: entity-02
+  category: entity
+  question: Who are Fancy Bear, also tracked as Forest Blizzard?
+  expected_source_ids: [G0007]
+  needs: [group]
+
+# ---------- revoked_id: an ID that no longer exists, but was replaced ----------
+
+- id: revoked-01
+  category: revoked_id
+  question: What is T1562.001?
+  # Revoked in v19 by T1685 (Disable or Modify Tools). Nothing in T1685's chunk
+  # mentions the old ID, so this fails until revoked-by mappings are ingested.
+  expected_source_ids: [T1685]
+  needs: [technique]
+
+# ---------- unanswerable: should decline ----------
 
 - id: unanswerable-01
   category: unanswerable
@@ -41,3 +343,33 @@
   expected_source_ids: []
   should_decline: true
   needs: [technique]
+
+- id: unanswerable-02
+  category: unanswerable
+  question: What does T1059.999 describe?
+  # The parent T1059 exists, so ID-aware retrieval must not settle for it.
+  expected_source_ids: []
+  should_decline: true
+  needs: [technique]
+
+- id: unanswerable-03
+  category: unanswerable
+  question: What is a good recipe for banana bread?
+  # No ID to fail on: only a score threshold can catch this one.
+  expected_source_ids: []
+  should_decline: true
+  needs: [technique]
+
+- id: unanswerable-04
+  category: unanswerable
+  question: What is CVE-2099-0001?
+  expected_source_ids: []
+  should_decline: true
+  needs: [cve]
+
+- id: unanswerable-05
+  category: unanswerable
+  question: What is mitigation M1099?
+  expected_source_ids: []
+  should_decline: true
+  needs: [mitigation]

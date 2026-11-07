@@ -7,12 +7,13 @@ the returned source IDs are compared with its `expected_source_ids`:
     MRR@k     mean of 1 / rank of the first expected ID (0 if none is in the top k)
 
 `should_decline` questions have nothing correct to retrieve, so they stay out of
-both averages; their top similarity is reported instead, since that is what a
-"no good match" threshold for the generation step will be set from.
+both averages. Their top score is reported instead, along with any IDs in the
+question that match no chunk, the two signals a decline rule can be built on.
 
 Usage:
     python -m rag.evaluate
-    python -m rag.evaluate -k 10 --out eval/results/vector-k10.json
+    python -m rag.evaluate --mode hybrid
+    python -m rag.evaluate --mode all --out eval/results/all-k5.json
 """
 
 from __future__ import annotations
@@ -26,13 +27,10 @@ from statistics import mean
 
 import yaml
 
-from . import config, db, query
+from . import config, db, hybrid
+from .query import RETRIEVERS
 
 QUESTIONS_PATH = config.ROOT / "eval" / "questions.yaml"
-
-# retrieval_mode -> search(question, k), returning ranked hits with `source_id`
-# and `similarity`. Hybrid retrieval joins here in week 4.
-RETRIEVERS = {"vector": query.search}
 
 
 def load_questions(path: Path) -> list[dict]:
@@ -83,13 +81,14 @@ def evaluate(
             results.append({**result, "status": "skipped", "reason": "no expected_source_ids"})
             continue
 
-        hits = search(q["question"], k)
+        hits = search(q["question"], k, q.get("doc_type"), q.get("platform"))
         retrieved = [h["source_id"] for h in hits]
         result["retrieved"] = retrieved
         result["top_similarity"] = float(hits[0]["similarity"]) if hits else None
 
         if q.get("should_decline"):
-            results.append({**result, "status": "decline"})
+            unknown_ids = [i for i in hybrid.extract_ids(q["question"]) if i not in source_ids]
+            results.append({**result, "status": "decline", "unknown_question_ids": unknown_ids})
             continue
 
         recall, rr = score(expected, retrieved)
@@ -124,16 +123,18 @@ def summarise(results: list[dict]) -> dict:
 
 def report(results: list[dict], summary: dict, k: int, header: str) -> None:
     print(f"\n{header}\n")
-    print(f"{'id':<18} {'category':<14} {'R@' + str(k):>5} {'RR':>5} {'top sim':>8}  retrieved")
+    print(f"{'id':<18} {'category':<14} {'R@' + str(k):>5} {'RR':>5} {'top':>8}  retrieved")
     for r in results:
         lead = f"{r['id']:<18} {r['category'] or '':<14}"
         if r["status"] == "skipped":
             print(f"{lead} skipped ({r['reason']})")
             continue
-        sim = f"{r['top_similarity']:.3f}" if r["top_similarity"] is not None else "-"
+        sim = f"{r['top_similarity']:.4f}" if r["top_similarity"] is not None else "-"
         retrieved = ", ".join(r["retrieved"])
         if r["status"] == "decline":
             print(f"{lead} {'decline':>11} {sim:>8}  {retrieved}")
+            if r["unknown_question_ids"]:
+                print(f"{'':<34}no chunk for: {', '.join(r['unknown_question_ids'])}")
             continue
         print(f"{lead} {r['recall']:>5.2f} {r['rr']:>5.2f} {sim:>8}  {retrieved}")
         missed = [sid for sid in r["expected"] if sid not in r["retrieved"]]
@@ -151,10 +152,27 @@ def report(results: list[dict], summary: dict, k: int, header: str) -> None:
     print(f"\n{counts['scored']} scored, {counts['decline']} decline, {counts['skipped']} skipped")
 
 
+def compare(runs: dict[str, dict], k: int, header: str) -> None:
+    """One row per category, one recall/MRR cell per mode."""
+    print(f"\n{header}\n\nrecall@{k} / MRR@{k}\n")
+    categories = list(dict.fromkeys(cat for run in runs.values() for cat in run["summary"]))
+    n = {cat: next(r["summary"][cat]["n"] for r in runs.values() if cat in r["summary"]) for cat in categories}
+    print(f"{'category':<14} {'n':>3}  " + "  ".join(f"{mode:>11}" for mode in runs))
+    for cat in categories:
+        cells = []
+        for run in runs.values():
+            s = run["summary"].get(cat)
+            cells.append(f"{s['recall']:.2f} / {s['mrr']:.2f}" if s else "-")
+        print(f"{cat:<14} {n[cat]:>3}  " + "  ".join(f"{c:>11}" for c in cells))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("-k", type=int, default=5, help="chunks retrieved per question (default 5)")
-    parser.add_argument("--mode", choices=sorted(RETRIEVERS), default="vector")
+    parser.add_argument(
+        "--mode", choices=[*RETRIEVERS, "all"], default="vector",
+        help="retrieval mode, or 'all' for a side-by-side summary of every mode",
+    )
     parser.add_argument("--questions", type=Path, default=QUESTIONS_PATH)
     parser.add_argument("--out", type=Path, help="also write the results as JSON here")
     args = parser.parse_args()
@@ -163,29 +181,35 @@ def main() -> None:
     doc_types, source_ids, manifest = corpus_state()
     attack_version = manifest.get("attack", {}).get("version")
     kev_version = manifest.get("kev", {}).get("catalog_version")
-
-    results = evaluate(questions, args.mode, args.k, doc_types, source_ids)
-    summary = summarise(results)
-    report(
-        results,
-        summary,
-        args.k,
-        f"mode={args.mode}  k={args.k}  model={config.EMBEDDING_MODEL}  "
-        f"ATT&CK v{attack_version}  KEV {kev_version}  ingested: {', '.join(sorted(doc_types)) or 'none'}",
+    header = (
+        f"k={args.k}  model={config.EMBEDDING_MODEL}  ATT&CK v{attack_version}  "
+        f"KEV {kev_version}  ingested: {', '.join(sorted(doc_types)) or 'none'}"
     )
+
+    modes = list(RETRIEVERS) if args.mode == "all" else [args.mode]
+    runs = {}
+    for mode in modes:
+        results = evaluate(questions, mode, args.k, doc_types, source_ids)
+        runs[mode] = {"summary": summarise(results), "questions": results}
+
+    if args.mode == "all":
+        compare(runs, args.k, header)
+    else:
+        run = runs[args.mode]
+        report(run["questions"], run["summary"], args.k, f"mode={args.mode}  {header}")
 
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "run_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "mode": args.mode,
             "k": args.k,
             "embedding_model": config.EMBEDDING_MODEL,
             "attack_version": attack_version,
             "kev_catalog_version": kev_version,
             "doc_types": sorted(doc_types),
-            "summary": summary,
-            "questions": results,
+            "rrf_k": hybrid.RRF_K,
+            "depth": hybrid.DEPTH,
+            "runs": runs,
         }
         args.out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         print(f"Wrote {args.out}")
