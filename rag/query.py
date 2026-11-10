@@ -64,6 +64,7 @@ RETRIEVERS = {
     "vector+fts": partial(hybrid.search, arms=("fts", "vector")),
     "hybrid": hybrid.search,
     "hybrid-pin": partial(hybrid.search, pin_ids=True),
+    "hybrid+expand": partial(hybrid.search, pin_ids=True, expand=True),
 }
 
 

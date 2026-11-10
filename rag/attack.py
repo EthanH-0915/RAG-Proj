@@ -10,6 +10,8 @@ library tracks the current spec.
 Relationship directions in the bundle:
     course-of-action            --mitigates--------> attack-pattern
     intrusion-set/malware/tool  --uses-------------> attack-pattern
+    intrusion-set               --uses-------------> malware/tool
+    campaign                    --attributed-to----> intrusion-set
     x-mitre-detection-strategy  --detects----------> attack-pattern
     attack-pattern (sub)        --subtechnique-of--> attack-pattern (parent)
 """
@@ -17,11 +19,15 @@ Relationship directions in the bundle:
 from __future__ import annotations
 
 import json
+import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Iterator
 
 from .text import clean_text
+
+
+_CVE = re.compile(r"\bCVE-\d{4}-\d{4,7}\b")
 
 
 def _is_live(obj: dict) -> bool:
@@ -38,6 +44,9 @@ class AttackData:
         # (relationship_type, target_ref) -> [source_ref], and the reverse.
         self._sources: dict[tuple[str, str], list[str]] = defaultdict(list)
         self._targets: dict[tuple[str, str], list[str]] = defaultdict(list)
+        # (relationship_type, source_ref, target_ref) -> the relationship's own
+        # description, e.g. how one mitigation applies to one technique.
+        self._rel_text: dict[tuple[str, str, str], str] = {}
 
         for obj in bundle.get("objects", []):
             kind = obj.get("type")
@@ -47,6 +56,8 @@ class AttackData:
                 key = obj.get("relationship_type")
                 self._sources[(key, obj["target_ref"])].append(obj["source_ref"])
                 self._targets[(key, obj["source_ref"])].append(obj["target_ref"])
+                if obj.get("description"):
+                    self._rel_text[(key, obj["source_ref"], obj["target_ref"])] = obj["description"]
                 continue
             self.objects[obj["id"]] = obj
             self.by_type[kind].append(obj)
@@ -87,6 +98,10 @@ class AttackData:
             for obj in self.related(relationship, stix_id, incoming=incoming)
         }
         return sorted(i for i in ids if i)
+
+    def relationship_text(self, relationship: str, source_id: str, target_id: str) -> str:
+        """Cleaned description of the relationship joining two objects, or ''."""
+        return clean_text(self._rel_text.get((relationship, source_id, target_id)))
 
     # ---------- techniques ----------
 
@@ -136,3 +151,35 @@ class AttackData:
                 }
             )
         return sorted(out, key=lambda s: s["id"] or "")
+
+    # ---------- mitigations ----------
+
+    def mitigations(self) -> Iterator[dict]:
+        """Live mitigations, in ID order.
+
+        Only M-IDs: the bundle also holds ~220 legacy course-of-action objects
+        filed under technique IDs ('T1003 Credential Dumping Mitigation'), all
+        deprecated, which the liveness check drops anyway.
+        """
+        live = [
+            m
+            for m in self.by_type["course-of-action"]
+            if _is_live(m) and (self.attack_id(m) or "").startswith("M")
+        ]
+        yield from sorted(live, key=lambda m: self.attack_id(m) or "")
+
+    # ---------- groups ----------
+
+    def groups(self) -> Iterator[dict]:
+        """Live groups (intrusion sets), in ID order."""
+        live = [g for g in self.by_type["intrusion-set"] if _is_live(g)]
+        yield from sorted(live, key=lambda g: self.attack_id(g) or "")
+
+    def cves_exploited_by(self, obj: dict) -> list[str]:
+        """CVE IDs named in an object's description or in the text of its `uses`
+        relationships ("APT29 has exploited CVE-2019-19781 ..."). ATT&CK has no
+        vulnerability objects, so this text is the only bridge to KEV."""
+        texts = [obj.get("description") or ""]
+        for target in self.related("uses", obj["id"], incoming=False):
+            texts.append(self._rel_text.get(("uses", obj["id"], target["id"]), ""))
+        return sorted({cve for text in texts for cve in _CVE.findall(text)})

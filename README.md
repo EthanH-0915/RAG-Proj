@@ -18,7 +18,7 @@ python -m venv .venv
 pip install -r requirements.txt
 
 python -m rag.download               # caches ATT&CK + KEV into data/raw/ with a manifest
-python -m rag.ingest --truncate      # chunk, embed and load techniques
+python -m rag.ingest --truncate      # chunk, embed and load techniques, mitigations and groups
 python -m rag.query "How do attackers dump credentials from memory?"
 python -m rag.query "What is T1059.001?" --mode hybrid
 python -m rag.evaluate               # recall@5 and MRR@5 over eval/questions.yaml
@@ -38,16 +38,16 @@ pick up a schema change: `docker compose down -v && docker compose up -d`.
 | `rag/attack.py` | STIX reader: techniques, relationships, detection strategies |
 | `rag/ingest.py` | Builds chunks, embeds them, upserts into PostgreSQL |
 | `rag/query.py` | Vector search, the `RETRIEVERS` mode registry, and the search CLI |
-| `rag/hybrid.py` | ID lookup + full-text + vector, fused with RRF; `fts`, `vector+fts`, `hybrid`, `hybrid-pin` |
+| `rag/hybrid.py` | ID lookup + full-text + vector, fused with RRF, plus technique → mitigation expansion; `fts`, `vector+fts`, `hybrid`, `hybrid-pin`, `hybrid+expand` |
 | `rag/evaluate.py` | Scores retrieval against the question set; `--out` saves JSON with feed versions |
 | `eval/questions.yaml` | Seed evaluation questions with expected source IDs |
 
 ## Status
 
-Week 3 scope is in place for one doc type: techniques and sub-techniques are
-chunked, embedded and searchable by vector similarity or hybrid retrieval with
-RRF. Still to come are the `group`, `mitigation` and `cve` chunk builders, the
-full 40-question evaluation set, the LLM generation step and the Streamlit UI.
+Techniques, sub-techniques, mitigations and groups are chunked, embedded and
+searchable by vector similarity or hybrid retrieval with RRF, and
+`eval/questions.yaml` holds 52 questions. Still to come are the `cve` chunk
+builder, the LLM generation step and the Streamlit UI.
 
 ## Data provenance
 

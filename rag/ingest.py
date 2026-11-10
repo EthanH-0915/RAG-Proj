@@ -1,10 +1,9 @@
-"""Chunk, embed and load ATT&CK techniques into PostgreSQL.
+"""Chunk, embed and load ATT&CK techniques, mitigations and groups into PostgreSQL.
 
-Week 3 scope: techniques and sub-techniques only. Groups, mitigations and KEV
-entries are additional `build_*_chunks` functions over the same table, added
-once the end-to-end path is working.
+Each doc type is a `build_*_chunk` function over the same table; KEV entries
+join BUILDERS the same way.
 
-Usage:  python -m rag.ingest [--limit N] [--truncate]
+Usage:  python -m rag.ingest [--doc-types technique mitigation group] [--limit N] [--truncate]
 """
 
 from __future__ import annotations
@@ -20,6 +19,8 @@ from .attack import AttackData
 from .text import clean_text
 
 DOC_TYPE_TECHNIQUE = "technique"
+DOC_TYPE_MITIGATION = "mitigation"
+DOC_TYPE_GROUP = "group"
 
 
 @dataclass
@@ -93,7 +94,16 @@ def build_technique_chunk(data: AttackData, technique: dict) -> Chunk | None:
                 lines.append(f"  {analytic['id']}{platform}: {analytic['description']}")
 
     if mitigations:
-        lines += ["", f"Mitigations: {'; '.join(_id_with_name(data, mitigations))}"]
+        # The relationship's own text says how this mitigation applies to this
+        # technique, which is what an answer to "how do I defend against X" needs.
+        lines += ["", "Mitigations:"]
+        for mitigation in sorted(mitigations, key=lambda m: data.attack_id(m) or ""):
+            mitigation_id = data.attack_id(mitigation)
+            if not mitigation_id:
+                continue
+            guidance = data.relationship_text("mitigates", mitigation["id"], technique["id"])
+            label = f"{mitigation_id} ({mitigation.get('name', '')})"
+            lines.append(f"{label}: {guidance}" if guidance else label)
     if groups:
         lines += ["", f"Used by groups: {'; '.join(_id_with_name(data, groups))}"]
     if software:
@@ -121,6 +131,95 @@ def build_technique_chunk(data: AttackData, technique: dict) -> Chunk | None:
         "url": data.attack_url(technique),
     }
     return Chunk(attack_id, DOC_TYPE_TECHNIQUE, "\n".join(lines), metadata, embed_text)
+
+
+def build_mitigation_chunk(data: AttackData, mitigation: dict) -> Chunk | None:
+    attack_id = data.attack_id(mitigation)
+    if not attack_id:
+        return None
+
+    techniques = data.related("mitigates", mitigation["id"], incoming=False)
+    technique_ids = _plain_ids(data, techniques)
+
+    lines = [f"{attack_id} — {mitigation.get('name', '')}"]
+    description = clean_text(mitigation.get("description"))
+    if description:
+        lines += ["", "Description:", description]
+    embed_text = "\n".join(lines)
+
+    if technique_ids:
+        # IDs only: each is a single lexeme, so "mitigations for T1110.003" finds
+        # this chunk through fts, whereas the names of the 100+ techniques the
+        # broadest mitigations cover would match nearly any keyword query.
+        lines += [
+            "",
+            f"Mitigates ({len(technique_ids)} techniques): {', '.join(technique_ids)}",
+        ]
+
+    metadata = {
+        "name": mitigation.get("name"),
+        "mitigates": technique_ids,
+        "attack_version": mitigation.get("x_mitre_version"),
+        "url": data.attack_url(mitigation),
+    }
+    return Chunk(attack_id, DOC_TYPE_MITIGATION, "\n".join(lines), metadata, embed_text)
+
+
+def build_group_chunk(data: AttackData, group: dict) -> Chunk | None:
+    attack_id = data.attack_id(group)
+    if not attack_id:
+        return None
+
+    name = group.get("name", "")
+    aliases = [a for a in group.get("aliases", []) if a != name]
+    used = data.related("uses", group["id"], incoming=False)
+    techniques = [o for o in used if o["type"] == "attack-pattern"]
+    software = [o for o in used if o["type"] in ("malware", "tool")]
+    campaigns = data.related("attributed-to", group["id"], incoming=True)
+    technique_ids = _plain_ids(data, techniques)
+    cves = data.cves_exploited_by(group)
+
+    # Aliases are embedded: "Cozy Bear" or "Midnight Blizzard" is often the only
+    # name a question uses.
+    lines = [f"{attack_id} — {name}"]
+    if aliases:
+        lines.append(f"Also known as: {', '.join(aliases)}")
+    description = clean_text(group.get("description"))
+    if description:
+        lines += ["", "Description:", description]
+    embed_text = "\n".join(lines)
+
+    if technique_ids:
+        # IDs only, as in mitigation chunks: up to 130 technique names would
+        # match nearly any keyword query.
+        lines += ["", f"Techniques used ({len(technique_ids)}): {', '.join(technique_ids)}"]
+    if software:
+        # Names kept: the lists are short and the names distinctive (Mimikatz).
+        lines += [f"Software used: {'; '.join(_id_with_name(data, software))}"]
+    if campaigns:
+        lines += [f"Campaigns: {'; '.join(_id_with_name(data, campaigns))}"]
+    if cves:
+        lines += [f"Exploited vulnerabilities: {', '.join(cves)}"]
+
+    metadata = {
+        "name": name,
+        "aliases": aliases,
+        "techniques": technique_ids,
+        "software": _plain_ids(data, software),
+        "campaigns": _plain_ids(data, campaigns),
+        "cves": cves,
+        "attack_version": group.get("x_mitre_version"),
+        "url": data.attack_url(group),
+    }
+    return Chunk(attack_id, DOC_TYPE_GROUP, "\n".join(lines), metadata, embed_text)
+
+
+# doc_type -> (objects to chunk, chunk builder)
+BUILDERS = {
+    DOC_TYPE_TECHNIQUE: (AttackData.techniques, build_technique_chunk),
+    DOC_TYPE_MITIGATION: (AttackData.mitigations, build_mitigation_chunk),
+    DOC_TYPE_GROUP: (AttackData.groups, build_group_chunk),
+}
 
 
 UPSERT = """
@@ -173,9 +272,14 @@ def load(chunks: list[Chunk], truncate: bool) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--limit", type=int, help="ingest only the first N techniques")
     parser.add_argument(
-        "--truncate", action="store_true", help="empty the table before loading"
+        "--doc-types", nargs="+", choices=list(BUILDERS), default=list(BUILDERS),
+        help="doc types to ingest (default: all)",
+    )
+    parser.add_argument("--limit", type=int, help="ingest only the first N of each doc type")
+    parser.add_argument(
+        "--truncate", action="store_true",
+        help="empty the whole table, every doc type, before loading",
     )
     args = parser.parse_args()
 
@@ -183,13 +287,17 @@ def main() -> None:
     data = AttackData(config.ATTACK_PATH)
     print(f"  ATT&CK v{data.collection.get('x_mitre_version')}")
 
-    techniques = list(data.techniques())
-    if args.limit:
-        techniques = techniques[: args.limit]
+    chunks: list[Chunk] = []
+    for doc_type in args.doc_types:
+        objects, build = BUILDERS[doc_type]
+        selected = list(objects(data))
+        if args.limit:
+            selected = selected[: args.limit]
+        built = [c for obj in selected if (c := build(data, obj))]
+        print(f"  {len(built)} {doc_type} chunks")
+        chunks += built
 
-    chunks = [c for t in techniques if (c := build_technique_chunk(data, t))]
     sizes = sorted(len(c.content) for c in chunks)
-    print(f"  {len(chunks)} technique chunks")
     print(
         f"  content chars: min {sizes[0]}, median {sizes[len(sizes) // 2]}, "
         f"max {sizes[-1]}"
