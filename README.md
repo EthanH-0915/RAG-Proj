@@ -18,7 +18,7 @@ python -m venv .venv
 pip install -r requirements.txt
 
 python -m rag.download               # caches ATT&CK + KEV into data/raw/ with a manifest
-python -m rag.ingest --truncate      # chunk, embed and load techniques, mitigations and groups
+python -m rag.ingest --truncate      # chunk, embed and load techniques, mitigations, groups and KEV
 python -m rag.query "How do attackers dump credentials from memory?"
 python -m rag.query "What is T1059.001?" --mode hybrid
 python -m rag.evaluate               # recall@5 and MRR@5 over eval/questions.yaml
@@ -35,7 +35,8 @@ pick up a schema change: `docker compose down -v && docker compose up -d`.
 | `sql/schema.sql` | The `chunks` table, its four indexes, and `ingest_runs` |
 | `rag/config.py` | Paths, feed URLs, database URL, embedding model |
 | `rag/download.py` | Caches the raw feeds; writes `data/raw/manifest.json` |
-| `rag/attack.py` | STIX reader: techniques, relationships, detection strategies |
+| `rag/attack.py` | STIX reader: techniques, mitigations, groups, relationships, detection strategies |
+| `rag/kev.py` | KEV reader, joined to the ATT&CK groups and software whose text names each CVE |
 | `rag/ingest.py` | Builds chunks, embeds them, upserts into PostgreSQL |
 | `rag/query.py` | Vector search, the `RETRIEVERS` mode registry, and the search CLI |
 | `rag/hybrid.py` | ID lookup + full-text + vector, fused with RRF, plus technique → mitigation expansion; `fts`, `vector+fts`, `hybrid`, `hybrid-pin`, `hybrid+expand` |
@@ -44,10 +45,10 @@ pick up a schema change: `docker compose down -v && docker compose up -d`.
 
 ## Status
 
-Techniques, sub-techniques, mitigations and groups are chunked, embedded and
-searchable by vector similarity or hybrid retrieval with RRF, and
-`eval/questions.yaml` holds 52 questions. Still to come are the `cve` chunk
-builder, the LLM generation step and the Streamlit UI.
+All four doc types (techniques and sub-techniques, mitigations, groups and KEV
+entries) are chunked, embedded and searchable by vector similarity or hybrid
+retrieval with RRF, and `eval/questions.yaml` holds 52 questions. Still to come
+are the LLM generation step and the Streamlit UI.
 
 ## Data provenance
 

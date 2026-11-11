@@ -1,9 +1,9 @@
-"""Chunk, embed and load ATT&CK techniques, mitigations and groups into PostgreSQL.
+"""Chunk, embed and load ATT&CK techniques, mitigations and groups, and KEV
+entries, into PostgreSQL.
 
-Each doc type is a `build_*_chunk` function over the same table; KEV entries
-join BUILDERS the same way.
+Each doc type is a `build_*_chunk` function over the same table.
 
-Usage:  python -m rag.ingest [--doc-types technique mitigation group] [--limit N] [--truncate]
+Usage:  python -m rag.ingest [--doc-types technique mitigation group cve] [--limit N] [--truncate]
 """
 
 from __future__ import annotations
@@ -14,13 +14,14 @@ from dataclasses import dataclass, field
 
 from psycopg.types.json import Json
 
-from . import config, db, embed
+from . import config, db, embed, kev
 from .attack import AttackData
 from .text import clean_text
 
 DOC_TYPE_TECHNIQUE = "technique"
 DOC_TYPE_MITIGATION = "mitigation"
 DOC_TYPE_GROUP = "group"
+DOC_TYPE_CVE = "cve"
 
 
 @dataclass
@@ -214,11 +215,63 @@ def build_group_chunk(data: AttackData, group: dict) -> Chunk | None:
     return Chunk(attack_id, DOC_TYPE_GROUP, "\n".join(lines), metadata, embed_text)
 
 
+def build_cve_chunk(data: AttackData, entry: dict) -> Chunk | None:
+    """One KEV entry, from kev.entries() so it carries `exploited_by`.
+
+    Two fields stay out of `content`, which feeds the fts index. requiredAction
+    is near-identical boilerplate ("Apply mitigations per vendor instructions
+    ..."), so 1,700 copies would answer every "mitigations" keyword query; and
+    the ransomware line is written only when use is Known, or every chunk would
+    match "ransomware".
+    """
+    cve = entry.get("cveID")
+    if not cve:
+        return None
+
+    lines = [
+        f"{cve} — {entry.get('vulnerabilityName', '')}",
+        f"Vendor: {entry.get('vendorProject', '')}; product: {entry.get('product', '')}",
+    ]
+    description = entry.get("shortDescription", "").strip()
+    if description:
+        lines += ["", "Description:", description]
+    embed_text = "\n".join(lines)
+
+    ransomware = entry.get("knownRansomwareCampaignUse") == "Known"
+    lines.append("")
+    if ransomware:
+        lines.append("Known to be used in ransomware campaigns.")
+    if entry.get("cwes"):
+        lines.append(f"Weaknesses: {', '.join(entry['cwes'])}")
+    lines.append(
+        f"Added to KEV: {entry.get('dateAdded', '')} (federal due date {entry.get('dueDate', '')})"
+    )
+    exploiters = entry["exploited_by"]
+    if exploiters:
+        lines.append(f"Exploited by (ATT&CK): {'; '.join(_id_with_name(data, exploiters))}")
+
+    metadata = {
+        "name": entry.get("vulnerabilityName"),
+        "vendor": entry.get("vendorProject"),
+        "product": entry.get("product"),
+        "date_added": entry.get("dateAdded"),
+        "due_date": entry.get("dueDate"),
+        "ransomware_use": ransomware,
+        "cwes": entry.get("cwes", []),
+        "required_action": entry.get("requiredAction"),
+        "exploited_by": _plain_ids(data, exploiters),
+        "references": [u.strip() for u in entry.get("notes", "").split(";") if u.strip()],
+        "url": f"https://nvd.nist.gov/vuln/detail/{cve}",
+    }
+    return Chunk(cve, DOC_TYPE_CVE, "\n".join(lines), metadata, embed_text)
+
+
 # doc_type -> (objects to chunk, chunk builder)
 BUILDERS = {
     DOC_TYPE_TECHNIQUE: (AttackData.techniques, build_technique_chunk),
     DOC_TYPE_MITIGATION: (AttackData.mitigations, build_mitigation_chunk),
     DOC_TYPE_GROUP: (AttackData.groups, build_group_chunk),
+    DOC_TYPE_CVE: (kev.entries, build_cve_chunk),
 }
 
 

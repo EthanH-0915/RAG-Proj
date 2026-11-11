@@ -64,21 +64,28 @@ ARM_SQL = {
     FROM chunks
    WHERE embedding_model = %(model)s AND source_id = ANY(%(ids)s::text[]){FILTERS}""",
     "fts": f"""
-  SELECT id, 'fts' AS arm, row_number() OVER (ORDER BY r DESC) AS rank, false AS pinned
+  SELECT id, 'fts' AS arm, row_number() OVER (ORDER BY r DESC, id) AS rank, false AS pinned
     FROM (SELECT id, ts_rank_cd(tsv, tq) AS r
             FROM chunks,
                  (SELECT replace(plainto_tsquery('english', %(text)s)::text, '&', '|')::tsquery AS tq) q
            WHERE embedding_model = %(model)s AND tsv @@ tq{FILTERS}
-           ORDER BY r DESC
+           ORDER BY r DESC, id
            LIMIT %(depth)s) s""",
     "vector": f"""
-  SELECT id, 'vector' AS arm, row_number() OVER (ORDER BY d) AS rank, false AS pinned
+  SELECT id, 'vector' AS arm, row_number() OVER (ORDER BY d, id) AS rank, false AS pinned
     FROM (SELECT id, embedding <=> %(q)s AS d
             FROM chunks
            WHERE embedding_model = %(model)s{FILTERS}
-           ORDER BY d
+           ORDER BY d, id
            LIMIT %(depth)s) s""",
 }
+# Ties are broken by id in every arm: ts_rank_cd ties often, and an untied
+# ORDER BY ... LIMIT lets PostgreSQL pick which tied rows make the cut, so the
+# same question could rank differently from one run to the next.
+
+# HNSW search explores hnsw.ef_search candidates (default 40) and can return no
+# more than that, which would silently cap the vector arm below DEPTH.
+EF_SEARCH = 2 * DEPTH
 
 SEARCH = """
 WITH ranked AS ({ranked}
@@ -200,6 +207,7 @@ def search(
 
     with db.connect() as conn, conn.cursor() as cur:
         db.ensure_model(cur)
+        cur.execute(f"SET hnsw.ef_search = {EF_SEARCH}")
         cur.execute(sql, params)
         columns = [c.name for c in cur.description]
         hits = [dict(zip(columns, row)) for row in cur.fetchall()]
