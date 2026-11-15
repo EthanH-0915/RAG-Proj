@@ -39,7 +39,7 @@ pick up a schema change: `docker compose down -v && docker compose up -d`.
 | `rag/kev.py` | KEV reader, joined to the ATT&CK groups and software whose text names each CVE |
 | `rag/ingest.py` | Builds chunks, embeds them, upserts into PostgreSQL |
 | `rag/query.py` | Vector search, the `RETRIEVERS` mode registry, and the search CLI |
-| `rag/hybrid.py` | ID lookup + full-text + vector, fused with RRF, plus technique → mitigation expansion; `fts`, `vector+fts`, `hybrid`, `hybrid-pin`, `hybrid+expand` |
+| `rag/hybrid.py` | ID and group-name lookup + full-text + vector, fused with RRF, plus the `RELATIONS` link-following table (technique → mitigations, technique/CVE → groups, group → CVEs); `fts`, `vector+fts`, `hybrid`, `hybrid-pin`, `hybrid+expand` |
 | `rag/evaluate.py` | Scores retrieval against the question set; `--out` saves JSON with feed versions |
 | `eval/questions.yaml` | Seed evaluation questions with expected source IDs |
 
@@ -47,7 +47,7 @@ pick up a schema change: `docker compose down -v && docker compose up -d`.
 
 All four doc types (techniques and sub-techniques, mitigations, groups and KEV
 entries) are chunked, embedded and searchable by vector similarity or hybrid
-retrieval with RRF, and `eval/questions.yaml` holds 52 questions. Still to come
+retrieval with RRF, and `eval/questions.yaml` holds 59 questions. Still to come
 are the LLM generation step and the Streamlit UI.
 
 ## Data provenance

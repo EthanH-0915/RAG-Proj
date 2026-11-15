@@ -270,6 +270,54 @@
   expected_source_ids: [T1003.001]
   needs: [technique]
 
+# relational-06 to -12 were added with the group and CVE link-following rows.
+# Expected IDs are the stored used_by_groups / exploited_by / cves lists, read
+# from the table before any retrieval run, picked where the list has <= 5 IDs.
+
+- id: relational-06
+  category: relational
+  question: Which groups use Kerberoasting?
+  expected_source_ids: [G0046, G0102, G0119]
+  needs: [technique, group]
+
+- id: relational-07
+  category: relational
+  question: Which threat groups have used cron jobs for persistence?
+  expected_source_ids: [G0082, G0106, G1023]
+  needs: [technique, group]
+
+- id: relational-08
+  category: relational
+  question: Which groups have used MFA push notification spam to get in?
+  # T1621 Multi-Factor Authentication Request Generation.
+  expected_source_ids: [G0016, G1004, G1015]
+  needs: [technique, group]
+
+- id: relational-09
+  category: relational
+  question: Which groups have exploited CVE-2019-19781?
+  expected_source_ids: [G0016, G0035, G0096]
+  needs: [cve, group]
+
+- id: relational-10
+  category: relational
+  question: Which threat actors exploited CVE-2022-41040?
+  expected_source_ids: [G1003, G1040]
+  needs: [cve, group]
+
+- id: relational-11
+  category: relational
+  question: Which KEV vulnerabilities has APT29 exploited?
+  # G0016's `cves` that are in the KEV catalog.
+  expected_source_ids: [CVE-2018-13379, CVE-2019-11510, CVE-2019-19781, CVE-2019-9670, CVE-2021-36934]
+  needs: [group, cve]
+
+- id: relational-12
+  category: relational
+  question: What vulnerabilities has Ember Bear exploited?
+  expected_source_ids: [CVE-2021-26084, CVE-2022-41040]
+  needs: [group, cve]
+
 # ---------- vulnerability: KEV entries described in words ----------
 
 - id: vulnerability-01
