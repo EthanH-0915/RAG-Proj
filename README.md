@@ -47,7 +47,7 @@ pick up a schema change: `docker compose down -v && docker compose up -d`.
 
 All four doc types (techniques and sub-techniques, mitigations, groups and KEV
 entries) are chunked, embedded and searchable by vector similarity or hybrid
-retrieval with RRF, and `eval/questions.yaml` holds 59 questions. Still to come
+retrieval with RRF, and `eval/questions.yaml` holds 67 questions. Still to come
 are the LLM generation step and the Streamlit UI.
 
 ## Data provenance

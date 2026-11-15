@@ -318,6 +318,58 @@
   expected_source_ids: [CVE-2021-26084, CVE-2022-41040]
   needs: [group, cve]
 
+# relational-13 to -20: written after the GROUP_WORDING and vector tie-break
+# fixes, which were made against relational-06 and -08, and before any run on
+# these. Same source of expected IDs as above.
+
+- id: relational-13
+  category: relational
+  question: Which groups have used DCSync to steal credentials?
+  expected_source_ids: [G0129, G1004, G1006, G1053]
+  needs: [technique, group]
+
+- id: relational-14
+  category: relational
+  question: Which threat actors use port knocking?
+  expected_source_ids: [G0056, G1048]
+  needs: [technique, group]
+
+- id: relational-15
+  category: relational
+  question: Which groups have abused SSH authorized keys for persistence?
+  expected_source_ids: [G0139, G1006, G1045]
+  needs: [technique, group]
+
+- id: relational-16
+  category: relational
+  question: Who has used credential stuffing?
+  expected_source_ids: [G0114, G1055]
+  needs: [technique, group]
+
+- id: relational-17
+  category: relational
+  question: Which groups exploited CVE-2020-0688?
+  expected_source_ids: [G0035, G0069, G0094]
+  needs: [cve, group]
+
+- id: relational-18
+  category: relational
+  question: Which groups exploited the Log4j vulnerability CVE-2021-44228?
+  expected_source_ids: [G0059, G1041]
+  needs: [cve, group]
+
+- id: relational-19
+  category: relational
+  question: Which vulnerabilities has MuddyWater exploited?
+  expected_source_ids: [CVE-2017-0199, CVE-2020-0688, CVE-2020-1472]
+  needs: [group, cve]
+
+- id: relational-20
+  category: relational
+  question: What CVEs has Storm-0501 exploited?
+  expected_source_ids: [CVE-2022-47966, CVE-2023-29300, CVE-2023-38203, CVE-2023-4966]
+  needs: [group, cve]
+
 # ---------- vulnerability: KEV entries described in words ----------
 
 - id: vulnerability-01

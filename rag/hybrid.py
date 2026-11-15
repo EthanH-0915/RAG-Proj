@@ -63,6 +63,16 @@ GROUP_INTENT = re.compile(
     r"|\bwho\s+(has\s+|have\s+)?(used|uses|use|exploited|exploits|is behind|are behind)\b",
     re.IGNORECASE,
 )
+# Everything that phrases the group relation, removed before guessing the
+# technique: the verbs matter as much as "groups", because every technique chunk
+# says "Used by groups:", so a leftover "use" makes fts favour whichever
+# technique repeats it most ("Which groups use Kerberoasting?" found Application
+# Access Token).
+GROUP_WORDING = re.compile(
+    r"\b(which|what|who|threat|groups?|actors?|APTs?|ha[sd]|have|us(?:e[sd]?|ing)"
+    r"|exploit\w*|abus\w*|is behind|are behind)\b",
+    re.IGNORECASE,
+)
 # "CVE" inside an ID ("CVE-2020-1472") is not wording.
 CVE_INTENT = re.compile(r"\b(CVEs?(?!-\d)|vulnerabilit(?:y|ies))\b", re.IGNORECASE)
 
@@ -79,6 +89,9 @@ class Relation:
     # means the source must be named: "Which vulnerabilities affect Log4j?" asks
     # for CVEs, and guessing a group to expand from would bury them.
     infer_from: str | None
+    # Words removed from the question before guessing the source; defaults to
+    # whatever `intent` matched.
+    wording: re.Pattern | None = None
 
 
 RELATIONS = (
@@ -88,6 +101,7 @@ RELATIONS = (
         GROUP_INTENT,
         {"technique": "used_by_groups", "cve": "exploited_by"},
         "technique",
+        GROUP_WORDING,
     ),
     Relation("cve", CVE_INTENT, {"group": "cves"}, None),
 )
@@ -139,9 +153,14 @@ fused AS (
 SELECT c.source_id, c.doc_type, c.metadata->>'name' AS name,
        f.score AS similarity, f.pinned, f.arms, c.content
   FROM fused f JOIN chunks c USING (id)
- ORDER BY f.pinned DESC, f.score DESC, c.source_id
+ ORDER BY f.pinned DESC, f.score DESC, {tiebreak}c.source_id
  LIMIT %(k)s
 """
+# Exact score ties are common under RRF: ranks (1, 2) and (2, 1) in two arms sum
+# to the same score. With a vector arm, the tie goes to the chunk closer to the
+# question rather than to the alphabet, which once picked T1556.006 over T1621
+# as the technique to expand "MFA push notification spam" from.
+VECTOR_TIEBREAK = "c.embedding <=> %(q)s, "
 
 # Target chunks listed under `key` in the given source chunks, closest to the
 # question first.
@@ -248,7 +267,10 @@ def search(
     }
     if "vector" in active:
         params["q"] = embed.encode_one(question)
-    sql = SEARCH.format(ranked="\n UNION ALL".join(f"\n({ARM_SQL[a]})" for a in active))
+    sql = SEARCH.format(
+        ranked="\n UNION ALL".join(f"\n({ARM_SQL[a]})" for a in active),
+        tiebreak=VECTOR_TIEBREAK if "vector" in active else "",
+    )
 
     with db.connect() as conn, conn.cursor() as cur:
         db.ensure_model(cur)
@@ -307,7 +329,7 @@ def _relation_sources(
     if relation.infer_from is None:
         return {}
 
-    subject = relation.intent.sub(" ", params["text"])
+    subject = (relation.wording or relation.intent).sub(" ", params["text"])
     source_params = {**params, "text": subject, "doc_type": relation.infer_from, "k": 1}
     if "q" in params:
         source_params["q"] = embed.encode_one(subject)
