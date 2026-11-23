@@ -42,3 +42,10 @@ _load_env_file(ROOT / ".env")
 DATABASE_URL = os.environ.get(
     "DATABASE_URL", "postgresql://rag:rag@localhost:5433/ragdb"
 )
+
+# Local generation through Ollama. num_ctx has to be set explicitly: Ollama's
+# default window is a few thousand tokens and it truncates longer prompts
+# silently, which would drop sources without any error.
+LLM_URL = os.environ.get("LLM_URL", "http://localhost:11434")
+LLM_MODEL = os.environ.get("LLM_MODEL", "llama3.2")
+LLM_NUM_CTX = int(os.environ.get("LLM_NUM_CTX", "8192"))

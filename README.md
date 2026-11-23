@@ -23,6 +23,9 @@ python -m rag.query "How do attackers dump credentials from memory?"
 python -m rag.query "What is T1059.001?" --mode hybrid
 python -m rag.evaluate               # recall@5 and MRR@5 over eval/questions.yaml
 python -m rag.evaluate --mode all    # every retrieval mode side by side
+
+ollama pull llama3.2                 # local generator; Ollama must be running
+python -m rag.answer "Which mitigations help against password spraying?" --show-sources
 ```
 
 `sql/schema.sql` is applied only when the database volume is first created. To
@@ -41,14 +44,17 @@ pick up a schema change: `docker compose down -v && docker compose up -d`.
 | `rag/query.py` | Vector search, the `RETRIEVERS` mode registry, and the search CLI |
 | `rag/hybrid.py` | ID and group-name lookup + full-text + vector, fused with RRF, plus the `RELATIONS` link-following table (technique → mitigations, technique/CVE → groups, group → CVEs); `fts`, `vector+fts`, `hybrid`, `hybrid-pin`, `hybrid+expand` |
 | `rag/evaluate.py` | Scores retrieval against the question set; `--out` saves JSON with feed versions |
+| `rag/llm.py` | Standard-library client for Ollama's chat endpoint: deterministic, JSON-schema output |
+| `rag/answer.py` | Decline check, prompt from retrieved sources, LLM call, citation check; the answer CLI |
 | `eval/questions.yaml` | Seed evaluation questions with expected source IDs |
 
 ## Status
 
 All four doc types (techniques and sub-techniques, mitigations, groups and KEV
 entries) are chunked, embedded and searchable by vector similarity or hybrid
-retrieval with RRF, and `eval/questions.yaml` holds 67 questions. Still to come
-are the LLM generation step and the Streamlit UI.
+retrieval with RRF, and `eval/questions.yaml` holds 67 questions. `rag/answer.py`
+generates cited answers with Llama 3.2 3B through Ollama. Still to come are the
+answer evaluation and the Streamlit UI.
 
 ## Data provenance
 
@@ -56,3 +62,4 @@ are the LLM generation step and the Streamlit UI.
 each feed, and `rag/ingest.py` copies it into the `ingest_runs` table. Results
 tables in the report should quote the ATT&CK version and KEV catalog version
 from there, since both feeds change under you — KEV almost daily.
+y
